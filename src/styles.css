@@ -1,0 +1,43 @@
+.FormRoot {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    width: 80%;
+    margin: 0 auto;
+}
+
+.FormField {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.FormLabel {
+    font-weight: bold;
+}
+
+.Input,
+.Textarea {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.Button {
+    padding: 10px 20px;
+    background-color: #0070f3;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.Button:hover {
+    background-color: #005bb5;
+}
+
+.FormMessage {
+    color: red;
+    font-size: 12px;
+}
