@@ -1,8 +1,8 @@
 import '@radix-ui/themes/styles.css';
-import { Theme, Flex, Heading, Container, Button, Grid, Box, Select } from '@radix-ui/themes'
-import { ConnectButton, useCurrentAccount, useSignAndExecuteTransactionBlock, useSuiClient, useSuiClientQuery } from '@mysten/dapp-kit';
+import { Theme, Flex, Heading, Container, Select } from '@radix-ui/themes'
+import { ConnectButton, useCurrentAccount } from '@mysten/dapp-kit';
 import { TemplateEditor } from './Template';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { NET_ENV } from './Constants';
 
 export default function App() {

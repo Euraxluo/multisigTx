@@ -47,9 +47,6 @@ importers:
       react-router-dom:
         specifier: ^7.6.0
         version: 7.6.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      tokenization-kit:
-        specifier: file:../tokenization-kit
-        version: file:../tokenization-kit
     devDependencies:
       '@types/react':
         specifier: ^18.3.21
@@ -275,9 +272,6 @@ packages:
   '@mysten/bcs@0.11.1':
     resolution: {integrity: sha512-xP85isNSYUCHd3O/g+TmZYmg4wK6cU8q/n/MebkIGP4CYVJZz2wU/G24xIZ3wI+0iTop4dfgA5kYrg/DQKCUzA==}
 
-  '@mysten/bcs@0.7.3':
-    resolution: {integrity: sha512-fbusBfsyc2MpTACi72H5edWJ670T84va+qn9jSPpb5BzZ+pzUM1Q0ApPrF5OT+mB1o5Ng+mxPQpBCZQkfiV2TA==}
-
   '@mysten/bcs@0.8.1':
     resolution: {integrity: sha512-wSEdP7QEfGQdb34g+7R0f3OdRqrv88iIABfJVDVJ6IsGLYVILreh8dZfNpZNUUyzctiyhX7zB9e/lR5qkddFPA==}
 
@@ -289,11 +283,6 @@ packages:
 
   '@mysten/move-bytecode-template@0.1.0':
     resolution: {integrity: sha512-i0G3QysBWpV/OgMnIE5GU2IJ9S/dOquFYXEEoNxgV0rd9qIAWzSin8BreWis+DwFxqV+lSwU6txZl45gfNvHzw==}
-
-  '@mysten/sui.js@0.37.1':
-    resolution: {integrity: sha512-nEOqnjUqb/VJcVk23LgZOX1FmBib/mBCwAWaJhtsCHLwv2jIAfCPY/fpB9lJ62QHrM8UFclpWxsLkqcUkKyPgA==}
-    engines: {node: '>=16'}
-    deprecated: This package has been renamed to @mysten/sui, please update to use the renamed package.
 
   '@mysten/sui.js@0.46.1':
     resolution: {integrity: sha512-YSqay1RJbstJt1AILoAcucWhm72ywB//qQrECl1b3CNiuAHG5iYUxlQk7i0a+2+cBnhlVvkOU4PePBMkABqn3w==}
@@ -1749,10 +1738,6 @@ packages:
     resolution: {integrity: sha512-65P7iz6X5yEr1cwcgvQxbbIw7Uk3gOy5dIdtZ4rDveLqhrdJP+Li/Hx6tyK0NEb+2GCyneCMJiGqrADCSNk8sQ==}
     engines: {node: '>=8.0'}
 
-  tokenization-kit@file:../tokenization-kit:
-    resolution: {directory: ../tokenization-kit, type: directory}
-    engines: {node: '>=16'}
-
   tr46@0.0.3:
     resolution: {integrity: sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw==}
 
@@ -2017,10 +2002,6 @@ snapshots:
     dependencies:
       bs58: 5.0.0
 
-  '@mysten/bcs@0.7.3':
-    dependencies:
-      bs58: 5.0.0
-
   '@mysten/bcs@0.8.1':
     dependencies:
       bs58: 5.0.0
@@ -2050,23 +2031,6 @@ snapshots:
       - utf-8-validate
 
   '@mysten/move-bytecode-template@0.1.0': {}
-
-  '@mysten/sui.js@0.37.1':
-    dependencies:
-      '@mysten/bcs': 0.7.3
-      '@noble/curves': 1.9.0
-      '@noble/hashes': 1.8.0
-      '@open-rpc/client-js': 1.8.1
-      '@scure/bip32': 1.7.0
-      '@scure/bip39': 1.6.0
-      '@suchipi/femver': 1.0.0
-      events: 3.3.0
-      superstruct: 1.0.4
-      tweetnacl: 1.0.3
-    transitivePeerDependencies:
-      - bufferutil
-      - encoding
-      - utf-8-validate
 
   '@mysten/sui.js@0.46.1':
     dependencies:
@@ -3562,15 +3526,6 @@ snapshots:
   to-regex-range@5.0.1:
     dependencies:
       is-number: 7.0.0
-
-  tokenization-kit@file:../tokenization-kit:
-    dependencies:
-      '@mysten/move-bytecode-template': 0.1.0
-      '@mysten/sui.js': 0.37.1
-    transitivePeerDependencies:
-      - bufferutil
-      - encoding
-      - utf-8-validate
 
   tr46@0.0.3: {}
 
