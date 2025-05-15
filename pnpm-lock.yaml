@@ -35,9 +35,6 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.76.1
         version: 5.76.1(react@18.3.1)
-      multisig:
-        specifier: link:@mysten/sui/multisig
-        version: link:@mysten/sui/multisig
       react:
         specifier: ^18.3.1
         version: 18.3.1
