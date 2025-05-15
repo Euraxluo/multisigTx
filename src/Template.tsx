@@ -8,6 +8,22 @@ import { publishModuleTxb, CompiledModule, TemplateDynamicContent, DynamicTempla
 import { toHEX } from '@mysten/sui.js/utils';
 import { TransactionBlock, UpgradePolicy } from '@mysten/sui.js/transactions';
 
+// 添加缺失的 fromBase64 函数
+function fromBase64(base64String: string): Uint8Array {
+    try {
+        // 在浏览器环境
+        const binary = atob(base64String);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes;
+    } catch (error) {
+        console.error("解析 base64 失败", error);
+        throw error;
+    }
+}
+
 export function TemplateEditor() {
     const suiClient = useSuiClient();
     const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
@@ -584,7 +600,3 @@ export function TemplateEditor() {
         </Form.Root>
     );
 };
-function fromBase64(mod: string): Iterable<unknown> | ArrayLike<unknown> {
-    throw new Error('Function not implemented.');
-}
-
