@@ -1,10 +1,10 @@
 import './styles.css';
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useSignAndExecuteTransactionBlock, useSuiClient } from '@mysten/dapp-kit';
 import { useCurrentAccount } from "@mysten/dapp-kit";
 import * as Form from '@radix-ui/react-form';
-import { initialBase64, constants_alias } from './Constants';
-import { publishModuleTxb, CompiledModule, TemplateDynamicContent, DynamicTemplateField, ConstantReplacement } from './lib';
+import { constants_alias } from './Constants';
+import { CompiledModule, TemplateDynamicContent, DynamicTemplateField, ConstantReplacement } from './lib';
 import { toHEX } from '@mysten/sui.js/utils';
 import { TransactionBlock, UpgradePolicy } from '@mysten/sui.js/transactions';
 
@@ -29,12 +29,6 @@ export function TemplateEditor() {
     const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
     const account = useCurrentAccount();
 
-    const [base64, setBase64] = useState(initialBase64);
-    const [compiledModule, setCompiledModule] = useState<CompiledModule | null>(null);
-    const [constants, setConstants] = useState<ConstantReplacement<DynamicTemplateField>[]>([]);
-    const [identifiers, setIdentifiers] = useState<Record<string, string>>({});
-    const [moduleName, setModuleName] = useState("template");
-    
     // 新增状态
     const [multisigAddress, setMultisigAddress] = useState("0x7766ccb15b4aacc5e1ff6e3bcee9485bd4cd846250999c6c6b5e2420259530c0");
     const [txData, setTxData] = useState<string | null>(null);
@@ -62,26 +56,6 @@ export function TemplateEditor() {
         expanded: boolean;
     }[]>([]);
     const [packageData, setPackageData] = useState<any>(null);
-
-    useEffect(() => {
-        if (compiledModule) {
-            const newConstants = constants.map(constant => {
-                let newValue = constant.newValue;
-                return { ...constant, newValue };
-            });
-            setConstants(newConstants);
-        }
-    }, [compiledModule, moduleName]);
-
-    const handleBase64Change = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        setBase64(e.target.value);
-    };
-
-    const handleConstantChange = (index: number, field: string, value: string) => {
-        const newConstants = [...constants];
-        newConstants[index] = { ...newConstants[index], [field]: value };
-        setConstants(newConstants);
-    };
 
     // 添加处理 JSON 输入变化的函数
     const handlePackageJsonChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -519,31 +493,6 @@ export function TemplateEditor() {
         } catch (error) {
             console.error("Error preparing transaction:", error);
             alert("准备交易失败");
-        }
-    };
-
-    const compileBase64 = () => {
-        try {
-            const module = new CompiledModule("template", base64);
-            setCompiledModule(module);
-            const newConstants = module.getReplaceableConstants().map(field => {
-                const alias = constants_alias.find(c => c.name === field.name)?.alias || "";
-                return {
-                    name: field.name,
-                    alias: alias,
-                    newValue: field.currentValue,
-                    expectedValue: field.currentValue,
-                    expectedType: field.expectedType
-                };
-            });
-            setConstants(newConstants);
-            setIdentifiers(module.inner.identifiers.reduce((acc, id) => {
-                acc[id] = id;
-                return acc;
-            }, {} as Record<string, string>));
-        } catch (error) {
-            console.error("Error deserializing module:", error);
-            setCompiledModule(null);
         }
     };
 
