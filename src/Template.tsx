@@ -168,7 +168,7 @@ export function TemplateEditor() {
                                 target: '0x2::package::authorize_upgrade',
                                 arguments: [
                                     cap,
-                                    txb.pure(UpgradePolicy.COMPATIBLE),
+                                    txb.pure(policyValue),
                                     txb.pure(digestArray)
                                 ],
                             });
