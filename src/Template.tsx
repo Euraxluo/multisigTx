@@ -38,6 +38,7 @@ export function TemplateEditor() {
     // 新增状态
     const [multisigAddress, setMultisigAddress] = useState("0x7766ccb15b4aacc5e1ff6e3bcee9485bd4cd846250999c6c6b5e2420259530c0");
     const [txData, setTxData] = useState<string | null>(null);
+    const [txToSign, setTxToSign] = useState<TransactionBlock | null>(null);
     // 添加新的状态用于直接发布 Package
     const [packageJson, setPackageJson] = useState<string>("");
     const [packageMode, setPackageMode] = useState<boolean>(false);
@@ -137,14 +138,53 @@ export function TemplateEditor() {
                         
                         // 使用默认升级
                         if (!policyPackageId) {
-                            const upgradeCap = txb.object(upgradeCapId);
+                            // 使用自定义政策模块升级
+                            const cap = txb.object(upgradeCapId);
+                                
+                            // 确定升级策略
+                            let policyValue: number;
+                            switch (upgradePolicy) {
+                                case "COMPATIBLE":
+                                    policyValue = UpgradePolicy.COMPATIBLE;
+                                    break;
+                                case "ADDITIVE":
+                                    policyValue = UpgradePolicy.ADDITIVE;
+                                    break;
+                                case "DEP_ONLY":
+                                    policyValue = UpgradePolicy.DEP_ONLY;
+                                    break;
+                                default:
+                                    policyValue = UpgradePolicy.COMPATIBLE;
+                            }
+                            // 正确处理 digest
+                            let digestArray: number[] = packageData.digest;
+                            if (!Array.isArray(digestArray)) {
+                                console.warn("digest 不是数组格式，将尝试其他格式");
+                                digestArray = [];
+                            }
                             
+                            // 获取升级票据
+                            const ticket = txb.moveCall({
+                                target: '0x2::package::authorize_upgrade',
+                                arguments: [
+                                    cap,
+                                    txb.pure(UpgradePolicy.COMPATIBLE),
+                                    txb.pure(digestArray)
+                                ],
+                            });
+
                             // 创建升级交易
-                            txb.upgrade({
+                            const receipt = txb.upgrade({
                                 modules: modulesByteArrays,
                                 dependencies: packageData.dependencies,
                                 packageId: packageId,
-                                ticket: upgradeCap,
+                                ticket: ticket,
+                            });
+
+                            // 提交升级
+                            txb.moveCall({
+                                target: '0x2::package::commit_upgrade',
+                                arguments: [cap, receipt],
                             });
                         } else {
                             // 使用自定义政策模块升级
@@ -242,6 +282,7 @@ export function TemplateEditor() {
             
             // 设置交易数据到状态
             setTxData(txHex);
+            setTxToSign(txb);
             
             // 显示交易预备完成信息
             alert("交易准备完成，可以查看交易数据或进行签名执行。");
@@ -283,14 +324,14 @@ export function TemplateEditor() {
 
     // 添加执行交易的方法
     const executeTransaction = () => {
-        if (!txData) {
+        if (!txToSign) {
             alert("请先准备交易");
             return;
         }
         
         try {
             // 获取交易块对象
-            const txb = TransactionBlock.from(txData);
+            const txb = txToSign;
             
             // 执行签名和提交
             signAndExecute(
