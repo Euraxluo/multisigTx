@@ -164,7 +164,7 @@ export class CompiledModule {
      * that the index is set correctly, the `expectedValue` and `expectedType` must be provided
      * - this way we at least try to minimize the risk of updating a wrong constant.
      */
-    updateConstant2(
+    updateConstant(
         idx: number,
         value: string,
         expectedValue: string,
@@ -200,37 +200,6 @@ export class CompiledModule {
         
         return this;
     }
-
-    /**
-     * Update a constant in the constant pool using the provided API.
-     */
-    updateConstant(
-        idx: number,
-        value: string,
-        expectedValue: string,
-        expectedType: string
-    ) {
-        const resolvedType = resolveType(this.inner.constant_pool[idx].type_);
-        const oldValue = decodeValue(resolvedType, this.inner.constant_pool[idx].data);
-
-        if (expectedType.toLowerCase() !== resolvedType.toLowerCase()) {
-            throw new Error(`Invalid constant type; expected ${expectedType}, got ${resolvedType}`);
-        }
-        if (oldValue !== expectedValue) {
-            throw new Error(`Invalid constant value; expected ${expectedValue}, got ${oldValue}`);
-        }
-
-        const newEncodedValue = new Uint8Array(encodeValue(resolvedType, value));
-        const expectedEncodedValue = new Uint8Array(encodeValue(resolvedType, expectedValue));
-        this.byte_code = template.update_constants(
-            this.byte_code,
-            newEncodedValue,
-            expectedEncodedValue,
-            template.get_constants(this.byte_code)[idx].type_
-        );
-        return this;
-    }
-
      /**
      * Update identifiers using the provided API.
      */

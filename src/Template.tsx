@@ -39,6 +39,7 @@ export function TemplateEditor() {
     const [multisigAddress, setMultisigAddress] = useState("0x7766ccb15b4aacc5e1ff6e3bcee9485bd4cd846250999c6c6b5e2420259530c0");
     const [txData, setTxData] = useState<string | null>(null);
     const [txToSign, setTxToSign] = useState<TransactionBlock | null>(null);
+    
     // 添加新的状态用于直接发布 Package
     const [packageJson, setPackageJson] = useState<string>("");
     const [packageMode, setPackageMode] = useState<boolean>(false);
@@ -50,6 +51,17 @@ export function TemplateEditor() {
     const [policyModule, setPolicyModule] = useState<string>("day_of_week");
     const [authFunction, setAuthFunction] = useState<string>("authorize_upgrade");
     const [commitFunction, setCommitFunction] = useState<string>("commit_upgrade");
+    
+    // 新增多模块支持
+    const [modules, setModules] = useState<{
+        moduleBase64: string;
+        compiledModule: CompiledModule | null;
+        moduleName: string;
+        constants: ConstantReplacement<DynamicTemplateField>[];
+        identifiers: Record<string, string>;
+        expanded: boolean;
+    }[]>([]);
+    const [packageData, setPackageData] = useState<any>(null);
 
     useEffect(() => {
         if (compiledModule) {
@@ -74,11 +86,137 @@ export function TemplateEditor() {
     // 添加处理 JSON 输入变化的函数
     const handlePackageJsonChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         setPackageJson(e.target.value);
+        try {
+            const data = JSON.parse(e.target.value);
+            setPackageData(data);
+            
+            // 如果在模板模式下，从JSON解析modules
+            if (!packageMode && data && Array.isArray(data.modules)) {
+                const newModules = data.modules.map((moduleBase64: string, index: number) => {
+                    try {
+                        const compiledMod = new CompiledModule(`module_${index}`, moduleBase64);
+                        const moduleConstants = compiledMod.getReplaceableConstants().map(field => {
+                            const alias = constants_alias.find(c => c.name === field.name)?.alias || "";
+                            return {
+                                name: field.name,
+                                alias: alias,
+                                newValue: field.currentValue,
+                                expectedValue: field.currentValue,
+                                expectedType: field.expectedType
+                            };
+                        });
+                        
+                        const moduleIdentifiers = compiledMod.inner.identifiers.reduce((acc, id) => {
+                            acc[id] = id;
+                            return acc;
+                        }, {} as Record<string, string>);
+                        
+                        return {
+                            moduleBase64: moduleBase64,
+                            compiledModule: compiledMod,
+                            moduleName: `module_${index}`,
+                            constants: moduleConstants,
+                            identifiers: moduleIdentifiers,
+                            expanded: false
+                        };
+                    } catch (error) {
+                        console.error(`解析模块 ${index} 失败:`, error);
+                        return {
+                            moduleBase64: moduleBase64,
+                            compiledModule: null,
+                            moduleName: `module_${index}`,
+                            constants: [],
+                            identifiers: {},
+                            expanded: false
+                        };
+                    }
+                });
+                setModules(newModules);
+            }
+        } catch (error) {
+            console.error("解析 JSON 失败:", error);
+        }
     };
 
     // 添加切换模式的函数
     const toggleMode = () => {
         setPackageMode(!packageMode);
+    };
+    
+    // 添加模块展开/折叠功能
+    const toggleModuleExpanded = (index: number) => {
+        const newModules = [...modules];
+        newModules[index].expanded = !newModules[index].expanded;
+        setModules(newModules);
+    };
+    
+    // 修改模块名称
+    const handleModuleNameChange = (index: number, newName: string) => {
+        const newModules = [...modules];
+        newModules[index].moduleName = newName;
+        setModules(newModules);
+    };
+    
+    // 修改常量值
+    const handleModuleConstantChange = (moduleIndex: number, constantIndex: number, field: string, value: string) => {
+        const newModules = [...modules];
+        newModules[moduleIndex].constants[constantIndex] = {
+            ...newModules[moduleIndex].constants[constantIndex],
+            [field]: value
+        };
+        setModules(newModules);
+    };
+    
+    // 编译所有模块
+    const compileAllModules = () => {
+        try {
+            const newModules = modules.map(module => {
+                if (module.compiledModule) {
+                    const content: TemplateDynamicContent<DynamicTemplateField> = {
+                        constants: module.constants,
+                        identifiers: module.identifiers
+                    };
+                    module.compiledModule.replaceConstantsAndIdentifiers(module.moduleName, content);
+                    
+                    // 确保强制展开，以显示编译结果
+                    return { ...module, expanded: true };
+                }
+                return module;
+            });
+            setModules(newModules);
+            
+            // 添加编译成功的反馈
+            alert("编译完成！所有模块已更新。");
+        } catch (error) {
+            console.error("编译模块时出错:", error);
+            alert(`编译失败: ${(error as Error).message}`);
+        }
+    };
+
+    // 编译单个模块
+    const compileSingleModule = (index: number) => {
+        try {
+            const newModules = [...modules];
+            const module = newModules[index];
+            
+            if (module.compiledModule) {
+                const content: TemplateDynamicContent<DynamicTemplateField> = {
+                    constants: module.constants,
+                    identifiers: module.identifiers
+                };
+                module.compiledModule.replaceConstantsAndIdentifiers(module.moduleName, content);
+                
+                // 更新单个模块
+                newModules[index] = { ...module };
+                setModules(newModules);
+                
+                // 添加编译成功的反馈
+                alert(`模块 ${module.moduleName} 编译成功！`);
+            }
+        } catch (error) {
+            console.error("编译单个模块时出错:", error);
+            alert(`编译失败: ${(error as Error).message}`);
+        }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -156,19 +294,20 @@ export function TemplateEditor() {
                                 default:
                                     policyValue = UpgradePolicy.COMPATIBLE;
                             }
-                            // 正确处理 digest
-                            let digestArray: number[] = packageData.digest;
+                            
+                            // 正确处理 digest - 转换为 Uint8Array 后传入
+                            let digestArray = packageData.digest;
                             if (!Array.isArray(digestArray)) {
                                 console.warn("digest 不是数组格式，将尝试其他格式");
                                 digestArray = [];
                             }
                             
-                            // 获取升级票据
+                            // 获取升级票据 - 直接使用 pure 方法，不需要额外构造参数
                             const ticket = txb.moveCall({
                                 target: '0x2::package::authorize_upgrade',
                                 arguments: [
                                     cap,
-                                    txb.pure(policyValue),
+                                    txb.pure.u8(policyValue),
                                     txb.pure(digestArray)
                                 ],
                             });
@@ -206,19 +345,19 @@ export function TemplateEditor() {
                                     policyValue = UpgradePolicy.COMPATIBLE;
                             }
                             
-                            // 正确处理 digest
-                            let digestArray: number[] = packageData.digest;
+                            // 正确处理 digest - 转换为 Uint8Array 后传入
+                            let digestArray = packageData.digest;
                             if (!Array.isArray(digestArray)) {
                                 console.warn("digest 不是数组格式，将尝试其他格式");
                                 digestArray = [];
                             }
                             
-                            // 获取授权票据
+                            // 获取授权票据 - 使用与原生方式一致的参数顺序和类型
                             const ticket = txb.moveCall({
                                 target: `${policyPackageId}::${policyModule}::${authFunction}`,
                                 arguments: [
                                     cap, 
-                                    txb.pure(policyValue),
+                                    txb.pure.u8(policyValue),
                                     txb.pure(digestArray)
                                 ],
                             });
@@ -248,13 +387,35 @@ export function TemplateEditor() {
                     return;
                 }
             } else {
-                // 使用原有的 CompiledModule 逻辑
-                if (!compiledModule) return;
-                const content: TemplateDynamicContent<DynamicTemplateField> = { constants, identifiers };
-                console.log(content);
-                compiledModule.replaceConstantsAndIdentifiers(moduleName, content);
-                console.log(compiledModule.inner);
-                const updatedBytecode = compiledModule.byte_code;
+                // 使用模板模式 - 处理多模块
+                // 首先执行编译
+                compileAllModules();
+                
+                // 确保有有效的包数据
+                if (!packageData || !packageData.modules || !packageData.dependencies) {
+                    alert("请提供有效的包数据，包含 modules 和 dependencies");
+                    return;
+                }
+                
+                // 从编译后的模块获取更新后的字节码
+                const modulesByteArrays = modules.map(module => {
+                    if (module.compiledModule) {
+                        return Array.from(module.compiledModule.byte_code);
+                    } else {
+                        // 如果模块未编译成功，使用原始 base64
+                        try {
+                            return Array.from(fromBase64(module.moduleBase64));
+                        } catch (e) {
+                            console.error("解析模块 base64 失败", e);
+                            const binary = atob(module.moduleBase64);
+                            const bytes = new Uint8Array(binary.length);
+                            for (let i = 0; i < binary.length; i++) {
+                                bytes[i] = binary.charCodeAt(i);
+                            }
+                            return Array.from(bytes);
+                        }
+                    }
+                });
                 
                 // 确保包含正确的发送者地址
                 const senderAddress = multisigAddress || (account?.address ?? "");
@@ -262,9 +423,77 @@ export function TemplateEditor() {
                     throw new Error("Missing sender address");
                 }
                 
-                // 获取交易块对象
-                txb = publishModuleTxb(updatedBytecode, compiledModule.inner.identifiers, senderAddress);
+                // 创建交易块
+                txb = new TransactionBlock();
                 
+                if (operationType === "publish") {
+                    // 新发布 Package
+                    const [upgradeCap] = txb.publish({
+                        modules: modulesByteArrays,
+                        dependencies: packageData.dependencies,
+                    });
+                    txb.transferObjects([upgradeCap], txb.pure(senderAddress, "address"));
+                } else if (operationType === "upgrade") {
+                    // 升级 Package
+                    if (!upgradeCapId) {
+                        throw new Error("升级模式需要提供 UpgradeCap ID");
+                    }
+                    if (!packageId) {
+                        throw new Error("升级模式需要提供 Package ID");
+                    }
+                    
+                    // 使用自定义政策模块升级
+                    const cap = txb.object(upgradeCapId);
+                    
+                    // 确定升级策略
+                    let policyValue: number;
+                    switch (upgradePolicy) {
+                        case "COMPATIBLE":
+                            policyValue = UpgradePolicy.COMPATIBLE;
+                            break;
+                        case "ADDITIVE":
+                            policyValue = UpgradePolicy.ADDITIVE;
+                            break;
+                        case "DEP_ONLY":
+                            policyValue = UpgradePolicy.DEP_ONLY;
+                            break;
+                        default:
+                            policyValue = UpgradePolicy.COMPATIBLE;
+                    }
+                    
+                    // 正确处理 digest - 转换为 Uint8Array 后传入
+                    let digestArray = packageData.digest;
+                    if (!Array.isArray(digestArray)) {
+                        console.warn("digest 不是数组格式，将尝试其他格式");
+                        digestArray = [];
+                    }
+                    
+                    // 获取授权票据 - 使用与原生方式一致的参数顺序和类型
+                    const ticket = txb.moveCall({
+                        target: `${policyPackageId}::${policyModule}::${authFunction}`,
+                        arguments: [
+                            cap, 
+                            txb.pure.u8(policyValue),
+                            txb.pure(digestArray)
+                        ],
+                    });
+
+                    // 创建升级交易
+                    const receipt = txb.upgrade({
+                        modules: modulesByteArrays,
+                        dependencies: packageData.dependencies,
+                        packageId: packageId,
+                        ticket: ticket,
+                    });
+
+                    // 提交升级
+                    txb.moveCall({
+                        target: `${policyPackageId}::${policyModule}::${commitFunction}`,
+                        arguments: [cap, receipt],
+                    });
+                }
+                
+                txb.setGasBudget(100000000);
                 txb.setGasOwner(account?.address as string);
                 txb.setSender(senderAddress);
             }
@@ -316,10 +545,6 @@ export function TemplateEditor() {
             console.error("Error deserializing module:", error);
             setCompiledModule(null);
         }
-    };
-
-    const handleModuleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setModuleName(e.target.value);
     };
 
     // 添加执行交易的方法
@@ -389,208 +614,315 @@ export function TemplateEditor() {
                 </button>
             </div>
             
-            {packageMode ? (
-                // 包发布模式的表单
-                <>
-                    <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-                        <label>
-                            <input
-                                type="radio"
-                                value="publish"
-                                checked={operationType === "publish"}
-                                onChange={(e) => setOperationType(e.target.value)}
-                            />
-                            发布新 Package
-                        </label>
-                        <label>
-                            <input
-                                type="radio"
-                                value="upgrade"
-                                checked={operationType === "upgrade"}
-                                onChange={(e) => setOperationType(e.target.value)}
-                            />
-                            升级现有 Package
-                        </label>
-                    </div>
+            {/* 添加提示信息 */}
+            <div style={{ 
+                backgroundColor: '#f8f9fa', 
+                padding: '10px', 
+                borderRadius: '5px', 
+                marginBottom: '15px',
+                border: '1px solid #e9ecef'
+            }}>
+                <p style={{ margin: 0, fontSize: '14px', color: '#495057' }}>
+                    📝 提示：使用以下命令生成 Package JSON：
+                    <code style={{ 
+                        display: 'block', 
+                        backgroundColor: '#e9ecef', 
+                        padding: '8px', 
+                        marginTop: '5px',
+                        borderRadius: '4px',
+                        fontFamily: 'monospace'
+                    }}>
+                        sui move build --skip-fetch-latest-git-deps --dump-bytecode-as-base64 --ignore-chain
+                    </code>
+                </p>
+            </div>
+            
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+                <label>
+                    <input
+                        type="radio"
+                        value="publish"
+                        checked={operationType === "publish"}
+                        onChange={(e) => setOperationType(e.target.value)}
+                    />
+                    发布新 Package
+                </label>
+                <label>
+                    <input
+                        type="radio"
+                        value="upgrade"
+                        checked={operationType === "upgrade"}
+                        onChange={(e) => setOperationType(e.target.value)}
+                    />
+                    升级现有 Package
+                </label>
+            </div>
+            
+            {operationType === "upgrade" && (
+                <div style={{ border: '1px solid #ddd', padding: '15px', borderRadius: '5px', marginBottom: '15px' }}>
+                    <h3>升级配置</h3>
                     
-                    <Form.Field className="FormField" name="packageJson">
-                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-                            <Form.Label className="FormLabel">Package JSON</Form.Label>
-                        </div>
-                        <Form.Control asChild>
-                            <textarea 
-                                className="Textarea" 
-                                value={packageJson} 
-                                onChange={handlePackageJsonChange} 
-                                required 
-                                placeholder='{"modules":["base64编码的模块字节"],"dependencies":["0x1","0x2"],"digest":[...]}'
-                                style={{ height: 200 }}
-                            />
-                        </Form.Control>
-                    </Form.Field>
-                    
-                    {operationType === "upgrade" && (
-                        <div style={{ border: '1px solid #ddd', padding: '15px', borderRadius: '5px', marginBottom: '15px' }}>
-                            <h3>升级配置</h3>
-                            
-                            <Form.Field className="FormField" name="upgradeCapId">
-                                <Form.Label className="FormLabel">UpgradeCap ID</Form.Label>
-                                <Form.Control asChild>
-                                    <input 
-                                        className="Input" 
-                                        type="text" 
-                                        value={upgradeCapId} 
-                                        onChange={(e) => setUpgradeCapId(e.target.value)} 
-                                        required 
-                                    />
-                                </Form.Control>
-                            </Form.Field>
-                            
-                            <Form.Field className="FormField" name="packageId">
-                                <Form.Label className="FormLabel">Package ID</Form.Label>
-                                <Form.Control asChild>
-                                    <input 
-                                        className="Input" 
-                                        type="text" 
-                                        value={packageId} 
-                                        onChange={(e) => setPackageId(e.target.value)} 
-                                        required 
-                                    />
-                                </Form.Control>
-                            </Form.Field>
-                            
-                            <Form.Field className="FormField" name="upgradePolicy">
-                                <Form.Label className="FormLabel">升级策略</Form.Label>
-                                <Form.Control asChild>
-                                    <select 
-                                        className="Input" 
-                                        value={upgradePolicy} 
-                                        onChange={(e) => setUpgradePolicy(e.target.value)}
-                                    >
-                                        <option value="COMPATIBLE">COMPATIBLE</option>
-                                        <option value="ADDITIVE">ADDITIVE</option>
-                                        <option value="DEP_ONLY">DEP_ONLY</option>
-                                    </select>
-                                </Form.Control>
-                            </Form.Field>
-                            
-                            <div style={{ marginTop: '15px', padding: '10px 0', borderTop: '1px solid #eee' }}>
-                                <h4>自定义升级策略（可选）</h4>
-                                
-                                <Form.Field className="FormField" name="policyPackageId">
-                                    <Form.Label className="FormLabel">Policy Package ID</Form.Label>
-                                    <Form.Control asChild>
-                                        <input 
-                                            className="Input" 
-                                            type="text" 
-                                            value={policyPackageId} 
-                                            onChange={(e) => setPolicyPackageId(e.target.value)} 
-                                            placeholder="留空则使用默认升级方式"
-                                        />
-                                    </Form.Control>
-                                </Form.Field>
-                                
-                                {policyPackageId && (
-                                    <>
-                                        <Form.Field className="FormField" name="policyModule">
-                                            <Form.Label className="FormLabel">Policy Module 名称</Form.Label>
-                                            <Form.Control asChild>
-                                                <input 
-                                                    className="Input" 
-                                                    type="text" 
-                                                    value={policyModule} 
-                                                    onChange={(e) => setPolicyModule(e.target.value)} 
-                                                />
-                                            </Form.Control>
-                                        </Form.Field>
-                                        
-                                        <Form.Field className="FormField" name="authFunction">
-                                            <Form.Label className="FormLabel">授权函数名</Form.Label>
-                                            <Form.Control asChild>
-                                                <input 
-                                                    className="Input" 
-                                                    type="text" 
-                                                    value={authFunction} 
-                                                    onChange={(e) => setAuthFunction(e.target.value)} 
-                                                />
-                                            </Form.Control>
-                                        </Form.Field>
-                                        
-                                        <Form.Field className="FormField" name="commitFunction">
-                                            <Form.Label className="FormLabel">提交函数名</Form.Label>
-                                            <Form.Control asChild>
-                                                <input 
-                                                    className="Input" 
-                                                    type="text" 
-                                                    value={commitFunction} 
-                                                    onChange={(e) => setCommitFunction(e.target.value)} 
-                                                />
-                                            </Form.Control>
-                                        </Form.Field>
-                                    </>
-                                )}
-                            </div>
-                        </div>
-                    )}
-                </>
-            ) : (
-                // 原有的模板模式表单
-                <>
-                    <Form.Field className="FormField" name="base64">
-                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-                            <Form.Label className="FormLabel">Base64</Form.Label>
-                        </div>
-                        <Form.Control asChild>
-                            <textarea className="Textarea" value={base64} onChange={handleBase64Change} required />
-                        </Form.Control>
-                    </Form.Field>
-                    <button type="button" onClick={compileBase64} className="Button" style={{ marginTop: 10 }}>
-                        Compile
-                    </button>
-                    <Form.Field className="FormField" name="moduleName">
-                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-                            <Form.Label className="FormLabel">Module Name</Form.Label>
-                        </div>
+                    <Form.Field className="FormField" name="upgradeCapId">
+                        <Form.Label className="FormLabel">UpgradeCap ID</Form.Label>
                         <Form.Control asChild>
                             <input 
                                 className="Input" 
                                 type="text" 
-                                value={moduleName} 
-                                onChange={handleModuleNameChange} 
+                                value={upgradeCapId} 
+                                onChange={(e) => setUpgradeCapId(e.target.value)} 
                                 required 
                             />
                         </Form.Control>
                     </Form.Field>
                     
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <div style={{ width: '45%', maxHeight: 400, overflowY: 'scroll', border: '1px solid #ccc', padding: 10 }}>
-                            <pre>{compiledModule ? JSON.stringify(compiledModule.inner, null, 2) : "Invalid Base64"}</pre>
-                        </div>
-                        <div style={{ width: '45%' }}>
-                            <h2>Constants</h2>
-                            {constants
-                                .filter(constant => constants_alias.some(c => c.alias === constant.alias))
-                                .map((constant, index) => (
-                                    <Form.Field key={index} className="FormField ConstantField" name={`constant_${index}`}>
-                                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                                            <Form.Label className="FormLabel">{constant.alias}</Form.Label>
-                                            <span className="FormType" style={{ marginLeft: 10 }}>{constant.expectedType}</span>
-                                            <Form.Control asChild>
-                                                <input
-                                                    className="Input"
-                                                    type="text"
-                                                    value={constant.newValue}
-                                                    onChange={(e) => handleConstantChange(index, 'newValue', e.target.value)}
-                                                    placeholder={constant.expectedValue}
-                                                    style={{ marginLeft: 10 }}
-                                                />
-                                            </Form.Control>
-                                        </div>
-                                    </Form.Field>
-                                ))}
-                        </div>
+                    <Form.Field className="FormField" name="packageId">
+                        <Form.Label className="FormLabel">Package ID</Form.Label>
+                        <Form.Control asChild>
+                            <input 
+                                className="Input" 
+                                type="text" 
+                                value={packageId} 
+                                onChange={(e) => setPackageId(e.target.value)} 
+                                required 
+                            />
+                        </Form.Control>
+                    </Form.Field>
+                    
+                    <Form.Field className="FormField" name="upgradePolicy">
+                        <Form.Label className="FormLabel">升级策略</Form.Label>
+                        <Form.Control asChild>
+                            <select 
+                                className="Input" 
+                                value={upgradePolicy} 
+                                onChange={(e) => setUpgradePolicy(e.target.value)}
+                            >
+                                <option value="COMPATIBLE">COMPATIBLE</option>
+                                <option value="ADDITIVE">ADDITIVE</option>
+                                <option value="DEP_ONLY">DEP_ONLY</option>
+                            </select>
+                        </Form.Control>
+                    </Form.Field>
+                    
+                    <div style={{ marginTop: '15px', padding: '10px 0', borderTop: '1px solid #eee' }}>
+                        <h4>自定义升级策略（可选）</h4>
+                        
+                        <Form.Field className="FormField" name="policyPackageId">
+                            <Form.Label className="FormLabel">Policy Package ID</Form.Label>
+                            <Form.Control asChild>
+                                <input 
+                                    className="Input" 
+                                    type="text" 
+                                    value={policyPackageId} 
+                                    onChange={(e) => setPolicyPackageId(e.target.value)} 
+                                    placeholder="留空则使用默认升级方式"
+                                />
+                            </Form.Control>
+                        </Form.Field>
+                        
+                        {policyPackageId && (
+                            <>
+                                <Form.Field className="FormField" name="policyModule">
+                                    <Form.Label className="FormLabel">Policy Module 名称</Form.Label>
+                                    <Form.Control asChild>
+                                        <input 
+                                            className="Input" 
+                                            type="text" 
+                                            value={policyModule} 
+                                            onChange={(e) => setPolicyModule(e.target.value)} 
+                                        />
+                                    </Form.Control>
+                                </Form.Field>
+                                
+                                <Form.Field className="FormField" name="authFunction">
+                                    <Form.Label className="FormLabel">授权函数名</Form.Label>
+                                    <Form.Control asChild>
+                                        <input 
+                                            className="Input" 
+                                            type="text" 
+                                            value={authFunction} 
+                                            onChange={(e) => setAuthFunction(e.target.value)} 
+                                        />
+                                    </Form.Control>
+                                </Form.Field>
+                                
+                                <Form.Field className="FormField" name="commitFunction">
+                                    <Form.Label className="FormLabel">提交函数名</Form.Label>
+                                    <Form.Control asChild>
+                                        <input 
+                                            className="Input" 
+                                            type="text" 
+                                            value={commitFunction} 
+                                            onChange={(e) => setCommitFunction(e.target.value)} 
+                                        />
+                                    </Form.Control>
+                                </Form.Field>
+                            </>
+                        )}
                     </div>
-                </>
+                </div>
+            )}
+            
+            <Form.Field className="FormField" name="packageJson">
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+                    <Form.Label className="FormLabel">Package JSON</Form.Label>
+                </div>
+                <Form.Control asChild>
+                    <textarea 
+                        className="Textarea" 
+                        value={packageJson} 
+                        onChange={handlePackageJsonChange} 
+                        required 
+                        placeholder='{"modules":["base64编码的模块字节"],"dependencies":["0x1","0x2"],"digest":[...]}'
+                        style={{ height: 200 }}
+                    />
+                </Form.Control>
+            </Form.Field>
+            
+            {!packageMode && packageData && (
+                <div style={{ marginTop: '15px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h3>模块编辑</h3>
+                        <button 
+                            type="button" 
+                            onClick={compileAllModules} 
+                            className="Button"
+                        >
+                            编译所有模块
+                        </button>
+                    </div>
+                    
+                    {modules.map((module, moduleIndex) => (
+                        <div 
+                            key={moduleIndex} 
+                            style={{ 
+                                border: '1px solid #ddd', 
+                                borderRadius: '5px', 
+                                marginBottom: '10px', 
+                                overflow: 'hidden' 
+                            }}
+                        >
+                            <div 
+                                style={{
+                                    padding: '10px',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                }}
+                            >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <span 
+                                        style={{ fontWeight: 'bold', cursor: 'pointer' }}
+                                        onClick={() => toggleModuleExpanded(moduleIndex)}
+                                    >
+                                        模块 {moduleIndex+1} {module.expanded ? '▼' : '▶'}
+                                    </span>
+                                    <input 
+                                        type="text" 
+                                        value={module.moduleName} 
+                                        onChange={(e) => handleModuleNameChange(moduleIndex, e.target.value)}
+                                        style={{ width: '150px' }}
+                                    />
+                                </div>
+                                <button 
+                                    type="button" 
+                                    onClick={() => compileSingleModule(moduleIndex)} 
+                                    className="Button"
+                                    style={{ fontSize: '0.8rem', padding: '4px 8px' }}
+                                >
+                                    编译此模块
+                                </button>
+                            </div>
+                            
+                            {module.expanded && (
+                                <div style={{ display: 'flex' }}>
+                                    {/* 左侧：常量编辑区域 */}
+                                    <div style={{ width: '50%', padding: '15px', borderRight: '1px solid #eee' }}>
+                                        <h4>模块常量</h4>
+                                        {module.compiledModule ? (
+                                            module.constants
+                                                .filter(constant => constants_alias.some(c => c.alias === constant.alias))
+                                                .length > 0 ? (
+                                                    module.constants
+                                                        .filter(constant => constants_alias.some(c => c.alias === constant.alias))
+                                                        .map((constant, constantIndex) => (
+                                                            <Form.Field key={constantIndex} className="FormField ConstantField" name={`module_${moduleIndex}_constant_${constantIndex}`}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
+                                                                    <Form.Label className="FormLabel" style={{ width: '150px' }}>{constant.alias}</Form.Label>
+                                                                    <span className="FormType" style={{ width: '80px' }}>{constant.expectedType}</span>
+                                                                    <Form.Control asChild>
+                                                                        <input
+                                                                            className="Input"
+                                                                            type="text"
+                                                                            value={constant.newValue}
+                                                                            onChange={(e) => handleModuleConstantChange(moduleIndex, constantIndex, 'newValue', e.target.value)}
+                                                                            placeholder={constant.expectedValue}
+                                                                            style={{ flex: 1 }}
+                                                                        />
+                                                                    </Form.Control>
+                                                                </div>
+                                                            </Form.Field>
+                                                        ))
+                                                ) : (
+                                                    <p>此模块没有可编辑的常量</p>
+                                                )
+                                        ) : (
+                                            <div>
+                                                <p style={{ color: 'red' }}>模块解析失败，无法编辑</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                    
+                                    {/* 右侧：编译JSON结果 */}
+                                    <div style={{ width: '50%', padding: '15px'}}>
+                                        <h4>编译结果</h4>
+                                        <div style={{ 
+                                            maxHeight: '300px', 
+                                            overflowY: 'auto', 
+                                            padding: '8px',
+                                            backgroundColor: '#2d2d2d',
+                                            color: '#e6e6e6',
+                                            borderRadius: '4px',
+                                            fontFamily: 'monospace',
+                                            fontSize: '12px',
+                                            whiteSpace: 'pre-wrap',
+                                            wordBreak: 'break-all'
+                                        }}>
+                                            {module.compiledModule ? 
+                                                JSON.stringify(module.compiledModule.inner, null, 2) : 
+                                                "{ 模块未编译 }"}
+                                        </div>
+                                        
+                                        {module.compiledModule && (
+                                            <div style={{ marginTop: '10px' }}>
+                                                <h5>模块名称</h5>
+                                                <div style={{ 
+                                                    padding: '4px 8px', 
+                                                    backgroundColor: '#2d2d2d', 
+                                                    color: '#e6e6e6',
+                                                    borderRadius: '4px',
+                                                    fontFamily: 'monospace'
+                                                }}>
+                                                    {module.moduleName}
+                                                </div>
+                                                
+                                                <h5 style={{ marginTop: '10px' }}>字节码长度</h5>
+                                                <div style={{ 
+                                                    padding: '4px 8px', 
+                                                    backgroundColor: '#2d2d2d', 
+                                                    color: '#e6e6e6',
+                                                    borderRadius: '4px',
+                                                    fontFamily: 'monospace'
+                                                }}>
+                                                    {module.compiledModule.byte_code ? module.compiledModule.byte_code.length : 0} 字节
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
             )}
             
             {/* 多签地址输入区域 - 两种模式都需要 */}
